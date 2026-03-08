@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>扫一扫 | QR Code Scanner</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      margin: 24px 0 8px;
+      letter-spacing: 2px;
+    }
+
+    p.subtitle {
+      font-size: 0.95rem;
+      color: #aaa;
+      margin-bottom: 24px;
+    }
+
+    #scanner-container {
+      position: relative;
+      width: 100%;
+      max-width: 360px;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #000;
+      box-shadow: 0 4px 32px rgba(0, 0, 0, 0.5);
+    }
+
+    #video {
+      width: 100%;
+      display: block;
+    }
+
+    #canvas {
+      display: none;
+    }
+
+    .viewfinder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    .viewfinder-box {
+      width: 200px;
+      height: 200px;
+      border: 2px solid rgba(255, 255, 255, 0.8);
+      border-radius: 8px;
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
+    }
+
+    .corner {
+      position: absolute;
+      width: 24px;
+      height: 24px;
+    }
+
+    .corner-tl { top: -2px; left: -2px; border-top: 4px solid #4fc3f7; border-left: 4px solid #4fc3f7; border-radius: 4px 0 0 0; }
+    .corner-tr { top: -2px; right: -2px; border-top: 4px solid #4fc3f7; border-right: 4px solid #4fc3f7; border-radius: 0 4px 0 0; }
+    .corner-bl { bottom: -2px; left: -2px; border-bottom: 4px solid #4fc3f7; border-left: 4px solid #4fc3f7; border-radius: 0 0 0 4px; }
+    .corner-br { bottom: -2px; right: -2px; border-bottom: 4px solid #4fc3f7; border-right: 4px solid #4fc3f7; border-radius: 0 0 4px 0; }
+
+    .scan-line {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(to right, transparent, #4fc3f7, transparent);
+      animation: scan 2s linear infinite;
+      top: 0;
+    }
+
+    @keyframes scan {
+      0%   { top: 0; }
+      100% { top: 100%; }
+    }
+
+    #controls {
+      margin-top: 20px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    button {
+      padding: 10px 24px;
+      border: none;
+      border-radius: 24px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    #btn-start {
+      background: #4fc3f7;
+      color: #000;
+    }
+
+    #btn-start:hover { background: #81d4fa; }
+
+    #btn-stop {
+      background: #ef5350;
+      color: #fff;
+      display: none;
+    }
+
+    #btn-stop:hover { background: #e57373; }
+
+    #btn-upload {
+      background: #66bb6a;
+      color: #000;
+    }
+
+    #btn-upload:hover { background: #81c784; }
+
+    #file-input {
+      display: none;
+    }
+
+    #result-box {
+      margin-top: 24px;
+      width: 100%;
+      max-width: 360px;
+      background: #16213e;
+      border-radius: 12px;
+      padding: 16px;
+      min-height: 72px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    #result-box .label {
+      font-size: 0.8rem;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    #result-text {
+      font-size: 1rem;
+      word-break: break-all;
+      color: #e0f7fa;
+    }
+
+    #result-link {
+      color: #4fc3f7;
+      text-decoration: none;
+      font-size: 0.9rem;
+      display: none;
+    }
+
+    #result-link:hover { text-decoration: underline; }
+
+    #status {
+      margin-top: 12px;
+      font-size: 0.85rem;
+      color: #aaa;
+      text-align: center;
+    }
+
+    .success { color: #66bb6a !important; }
+    .error   { color: #ef5350 !important; }
+  </style>
+</head>
+<body>
+  <h1>📷 扫一扫</h1>
+  <p class="subtitle">QR Code / Barcode Scanner</p>
+
+  <div id="scanner-container">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+    <div class="viewfinder">
+      <div class="viewfinder-box" style="position:relative;">
+        <div class="corner corner-tl"></div>
+        <div class="corner corner-tr"></div>
+        <div class="corner corner-bl"></div>
+        <div class="corner corner-br"></div>
+        <div class="scan-line"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="controls">
+    <button id="btn-start">开始扫描 / Start</button>
+    <button id="btn-stop">停止 / Stop</button>
+    <button id="btn-upload">上传图片 / Upload</button>
+    <input type="file" id="file-input" accept="image/*" />
+  </div>
+
+  <div id="result-box">
+    <span class="label">扫描结果 / Result</span>
+    <span id="result-text">等待扫描… / Waiting for scan…</span>
+    <a id="result-link" href="#" target="_blank" rel="noopener noreferrer">打开链接 / Open link ↗</a>
+  </div>
+
+  <p id="status"></p>
+
+  <!-- jsQR: MIT-licensed QR code decoder (no server required) -->
+  <script
+    src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"
+    integrity="sha384-OLBgp1GsljhM2TJ+sbHjaiH9txEUvgdDTAzHv2P24donTt6/529l+9Ua0vFImLlb"
+    crossorigin="anonymous"
+  ></script>
+  <script>
+    (function () {
+      "use strict";
+
+      const video       = document.getElementById("video");
+      const canvas      = document.getElementById("canvas");
+      const ctx         = canvas.getContext("2d");
+      const btnStart    = document.getElementById("btn-start");
+      const btnStop     = document.getElementById("btn-stop");
+      const btnUpload   = document.getElementById("btn-upload");
+      const fileInput   = document.getElementById("file-input");
+      const resultText  = document.getElementById("result-text");
+      const resultLink  = document.getElementById("result-link");
+      const status      = document.getElementById("status");
+
+      let stream        = null;
+      let animationId   = null;
+      let scanning      = false;
+
+      function setStatus(msg, cls) {
+        status.textContent = msg;
+        status.className = cls || "";
+      }
+
+      function showResult(text) {
+        resultText.textContent = text;
+
+        try {
+          const url = new URL(text);
+          if (url.protocol === "http:" || url.protocol === "https:") {
+            resultLink.href = url.href;
+            resultLink.style.display = "inline";
+          } else {
+            resultLink.style.display = "none";
+          }
+        } catch (_) {
+          resultLink.style.display = "none";
+        }
+      }
+
+      function tick() {
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+          canvas.width  = video.videoWidth;
+          canvas.height = video.videoHeight;
+          ctx.drawImage(video, 0, 0);
+
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: "dontInvert",
+          });
+
+          if (code) {
+            setStatus("✅ 扫描成功！/ Scan successful!", "success");
+            showResult(code.data);
+            stopCamera();
+            return;
+          }
+        }
+
+        if (scanning) {
+          animationId = requestAnimationFrame(tick);
+        }
+      }
+
+      function stopCamera() {
+        scanning = false;
+        if (animationId) {
+          cancelAnimationFrame(animationId);
+          animationId = null;
+        }
+        if (stream) {
+          stream.getTracks().forEach(function (t) { t.stop(); });
+          stream = null;
+        }
+        video.srcObject = null;
+        btnStart.style.display = "inline-block";
+        btnStop.style.display  = "none";
+      }
+
+      btnStart.addEventListener("click", function () {
+        if (!("jsQR" in window)) {
+          setStatus("❌ 请检查网络连接 / Please check network connection", "error");
+          return;
+        }
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          setStatus("❌ 当前浏览器不支持摄像头 / Camera not supported in this browser", "error");
+          return;
+        }
+
+        setStatus("正在请求摄像头权限… / Requesting camera permission…");
+        resultText.textContent = "等待扫描… / Waiting for scan…";
+        resultLink.style.display = "none";
+
+        const constraints = {
+          video: {
+            facingMode: { ideal: "environment" },
+            width:  { ideal: 1280 },
+            height: { ideal: 720 },
+          }
+        };
+
+        navigator.mediaDevices.getUserMedia(constraints)
+          .then(function (s) {
+            stream = s;
+            video.srcObject = stream;
+            video.play();
+            scanning = true;
+            btnStart.style.display = "none";
+            btnStop.style.display  = "inline-block";
+            setStatus("🔍 扫描中… / Scanning…");
+            animationId = requestAnimationFrame(tick);
+          })
+          .catch(function (err) {
+            const msg = err.name === "NotAllowedError"
+              ? "❌ 摄像头权限被拒绝 / Camera permission denied"
+              : `❌ 无法打开摄像头: ${err.message} / Cannot open camera: ${err.message}`;
+            setStatus(msg, "error");
+          });
+      });
+
+      btnStop.addEventListener("click", function () {
+        stopCamera();
+        setStatus("已停止 / Stopped");
+      });
+
+      btnUpload.addEventListener("click", function () {
+        fileInput.click();
+      });
+
+      fileInput.addEventListener("change", function () {
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        if (!("jsQR" in window)) {
+          setStatus("❌ 请检查网络连接 / Please check network connection", "error");
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          const img = new Image();
+          img.onload = function () {
+            canvas.width  = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height, {
+              inversionAttempts: "attemptBoth",
+            });
+            if (code) {
+              setStatus("✅ 扫描成功！/ Scan successful!", "success");
+              showResult(code.data);
+            } else {
+              setStatus("⚠️ 未检测到二维码 / No QR code detected", "error");
+            }
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+        fileInput.value = "";
+      });
+    })();
+  </script>
+</body>
+</html>
